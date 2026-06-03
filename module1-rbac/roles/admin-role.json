@@ -1,0 +1,32 @@
+{
+  "RoleName": "AdminRole",
+  "Description": "Full administrative access role. Assumed by admin-user with MFA enforced.",
+  "AssumeRolePolicyDocument": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::ACCOUNT_ID:user/admin-user"
+        },
+        "Action": "sts:AssumeRole",
+        "Condition": {
+          "Bool": {
+            "aws:MultiFactorAuthPresent": "true"
+          }
+        }
+      }
+    ]
+  },
+  "AttachedPolicies": [
+    {
+      "PolicyName": "AdminFullAccessPolicy",
+      "PolicyArn": "arn:aws:iam::ACCOUNT_ID:policy/AdminFullAccessPolicy"
+    }
+  ],
+  "Tags": [
+    { "Key": "Project", "Value": "IAM-Project" },
+    { "Key": "Module", "Value": "RBAC" },
+    { "Key": "Role", "Value": "Admin" }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "RoleName": "DatabaseAdminRole",
+  "Description": "Full RDS management access. Restricted to database operations only.",
+  "AssumeRolePolicyDocument": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::ACCOUNT_ID:user/db-user"
+        },
+        "Action": "sts:AssumeRole",
+        "Condition": {
+          "Bool": {
+            "aws:MultiFactorAuthPresent": "true"
+          }
+        }
+      }
+    ]
+  },
+  "AttachedPolicies": [
+    {
+      "PolicyName": "DatabaseAdminPolicy",
+      "PolicyArn": "arn:aws:iam::ACCOUNT_ID:policy/DatabaseAdminPolicy"
+    }
+  ],
+  "Tags": [
+    { "Key": "Project", "Value": "IAM-Project" },
+    { "Key": "Module", "Value": "RBAC" },
+    { "Key": "Role", "Value": "DatabaseAdmin" }
+  ]
+}

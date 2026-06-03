@@ -1,0 +1,32 @@
+{
+  "RoleName": "AuditorRole",
+  "Description": "Read-only access to CloudTrail logs and CloudWatch monitoring.",
+  "AssumeRolePolicyDocument": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::ACCOUNT_ID:user/auditor-user"
+        },
+        "Action": "sts:AssumeRole",
+        "Condition": {
+          "Bool": {
+            "aws:MultiFactorAuthPresent": "true"
+          }
+        }
+      }
+    ]
+  },
+  "AttachedPolicies": [
+    {
+      "PolicyName": "AuditorReadOnlyPolicy",
+      "PolicyArn": "arn:aws:iam::ACCOUNT_ID:policy/AuditorReadOnlyPolicy"
+    }
+  ],
+  "Tags": [
+    { "Key": "Project", "Value": "IAM-Project" },
+    { "Key": "Module", "Value": "RBAC" },
+    { "Key": "Role", "Value": "Auditor" }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "RoleName": "DeveloperRole",
+  "Description": "Developer access: EC2 start/stop, S3 upload. No delete permissions.",
+  "AssumeRolePolicyDocument": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::ACCOUNT_ID:user/developer-user"
+        },
+        "Action": "sts:AssumeRole",
+        "Condition": {
+          "Bool": {
+            "aws:MultiFactorAuthPresent": "true"
+          }
+        }
+      }
+    ]
+  },
+  "AttachedPolicies": [
+    {
+      "PolicyName": "DeveloperAccessPolicy",
+      "PolicyArn": "arn:aws:iam::ACCOUNT_ID:policy/DeveloperAccessPolicy"
+    }
+  ],
+  "Tags": [
+    { "Key": "Project", "Value": "IAM-Project" },
+    { "Key": "Module", "Value": "RBAC" },
+    { "Key": "Role", "Value": "Developer" }
+  ]
+}

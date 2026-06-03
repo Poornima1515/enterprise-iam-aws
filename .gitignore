@@ -1,0 +1,22 @@
+# AWS Credentials - NEVER commit these
+.aws/
+*.credentials
+*credentials*
+*secret*
+*access-key*
+
+# Temp files created by scripts
+tmp/
+*.log
+
+# Credential report - contains sensitive user info
+credential-report.csv
+cloudtrail-audit.txt
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+*.swp

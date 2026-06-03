@@ -1,0 +1,32 @@
+{
+  "RoleName": "TesterRole",
+  "Description": "Read-only access to EC2 and S3 for testing purposes.",
+  "AssumeRolePolicyDocument": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::ACCOUNT_ID:user/tester-user"
+        },
+        "Action": "sts:AssumeRole",
+        "Condition": {
+          "Bool": {
+            "aws:MultiFactorAuthPresent": "true"
+          }
+        }
+      }
+    ]
+  },
+  "AttachedPolicies": [
+    {
+      "PolicyName": "TesterReadOnlyPolicy",
+      "PolicyArn": "arn:aws:iam::ACCOUNT_ID:policy/TesterReadOnlyPolicy"
+    }
+  ],
+  "Tags": [
+    { "Key": "Project", "Value": "IAM-Project" },
+    { "Key": "Module", "Value": "RBAC" },
+    { "Key": "Role", "Value": "Tester" }
+  ]
+}
