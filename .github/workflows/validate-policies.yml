@@ -1,0 +1,65 @@
+name: Validate IAM Policies
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'module1-rbac/policies/**'
+      - 'module1-rbac/roles/**'
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    name: Validate JSON Policies
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate JSON syntax
+        run: |
+          echo "Validating IAM policy JSON files..."
+          for file in module1-rbac/policies/*.json module1-rbac/roles/*.json; do
+            echo "Checking: $file"
+            python3 -c "import json; json.load(open('$file'))" && echo "  ✅ Valid" || echo "  ❌ Invalid JSON: $file"
+          done
+
+      - name: Check for overly permissive policies
+        run: |
+          echo "Checking for security issues..."
+          for file in module1-rbac/policies/*.json; do
+            if grep -q '"Action": "\*"' "$file" && ! grep -q '"Condition"' "$file"; then
+              echo "  ⚠️  WARNING: $file has wildcard Action without Condition"
+            else
+              echo "  ✅ $file looks secure"
+            fi
+          done
+
+      - name: Verify Deny statements exist
+        run: |
+          echo "Verifying Deny statements in developer and tester policies..."
+          for file in module1-rbac/policies/developer-policy.json module1-rbac/policies/tester-policy.json; do
+            if grep -q '"Effect": "Deny"' "$file"; then
+              echo "  ✅ $file has explicit Deny"
+            else
+              echo "  ❌ MISSING Deny statement: $file"
+              exit 1
+            fi
+          done
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check for hardcoded credentials
+        run: |
+          echo "Scanning for hardcoded secrets..."
+          if grep -r "SecretAccessKey\|AKIA[A-Z0-9]\{16\}" --include="*.json" --include="*.sh" --include="*.java" .; then
+            echo "⚠️  Potential credentials found - review before merging"
+          else
+            echo "✅ No hardcoded credentials found"
+          fi

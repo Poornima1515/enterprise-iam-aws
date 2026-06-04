@@ -1,0 +1,31 @@
+name: Build IAM Dashboard
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'iam-dashboard/**'
+
+jobs:
+  build:
+    name: Build Spring Boot Dashboard
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build with Maven
+        run: mvn clean package -q --no-transfer-progress
+        working-directory: iam-dashboard
+
+      - name: Verify JAR created
+        run: |
+          ls -la iam-dashboard/target/*.jar
+          echo "✅ Build successful"
