@@ -26,16 +26,34 @@ public class IamService {
                 model.setArn(user.arn());
                 model.setCreateDate(user.createDate().toString());
 
+                // Check MFA
                 ListMfaDevicesResponse mfa = iamClient.listMFADevices(
                         ListMfaDevicesRequest.builder().userName(user.userName()).build());
                 model.setMfaActive(!mfa.mfaDevices().isEmpty());
 
+                // Get groups
                 ListGroupsForUserResponse grp = iamClient.listGroupsForUser(
                         ListGroupsForUserRequest.builder().userName(user.userName()).build());
                 String groups = grp.groups().stream().map(Group::groupName)
                         .collect(Collectors.joining(", "));
                 model.setGroups(groups.isEmpty() ? "No Group" : groups);
-                model.setStatus("Active");
+
+                // Check REAL status — does login profile exist?
+                String status;
+                try {
+                    iamClient.getLoginProfile(
+                            GetLoginProfileRequest.builder().userName(user.userName()).build());
+                    status = "Active";
+                } catch (NoSuchEntityException e) {
+                    // No login profile = console access disabled
+                    // Check if has access keys
+                    ListAccessKeysResponse keys = iamClient.listAccessKeys(
+                            ListAccessKeysRequest.builder().userName(user.userName()).build());
+                    boolean hasActiveKey = keys.accessKeyMetadata().stream()
+                            .anyMatch(k -> k.statusAsString().equals("Active"));
+                    status = hasActiveKey ? "Keys Only" : "Disabled";
+                }
+                model.setStatus(status);
                 users.add(model);
             }
         } catch (Exception e) {
@@ -108,7 +126,7 @@ public class IamService {
         return stats;
     }
 
-    // ADMIN ONLY: Onboard
+    // ADMIN ONLY: Onboard — returns access keys for delivery to employee
     public Map<String, String> createUser(String username, String department, String employeeId) {
         Map<String, String> result = new HashMap<>();
         try {
@@ -116,14 +134,28 @@ public class IamService {
                     .userName(username)
                     .tags(Tag.builder().key("Department").value(department).build(),
                           Tag.builder().key("EmployeeID").value(employeeId).build(),
-                          Tag.builder().key("Project").value("IAM-Project").build())
+                          Tag.builder().key("Project").value("IAM-Project").build(),
+                          Tag.builder().key("JoinDate").value(java.time.LocalDate.now().toString()).build())
                     .build());
+
             iamClient.createLoginProfile(CreateLoginProfileRequest.builder()
                     .userName(username).password("Welcome@2026!").passwordResetRequired(true).build());
+
             iamClient.addUserToGroup(AddUserToGroupRequest.builder()
                     .userName(username).groupName(department).build());
+
+            // Generate access keys for the new employee
+            CreateAccessKeyResponse keyResponse = iamClient.createAccessKey(
+                    CreateAccessKeyRequest.builder().userName(username).build());
+
             result.put("status", "success");
-            result.put("message", "✅ User " + username + " onboarded into " + department + " group. Temp password: Welcome@2026!");
+            result.put("message", "User " + username + " onboarded into " + department + " group");
+            result.put("accessKeyId", keyResponse.accessKey().accessKeyId());
+            result.put("secretAccessKey", keyResponse.accessKey().secretAccessKey());
+            result.put("tempPassword", "Welcome@2026!");
+            result.put("department", department);
+            result.put("employeeId", employeeId);
+
         } catch (Exception e) {
             result.put("status", "error");
             result.put("message", e.getMessage());

@@ -313,38 +313,50 @@ function updateSecurityScore(stats, cloudtrailLogging) {
     }
 }
 
-// ===== LIVE SECURITY FEED =====
+// ===== LIVE SECURITY FEED — uses /api/feed for instant updates =====
 async function loadLiveFeed() {
     try {
-        const res = await apiFetch('/api/audit?limit=8');
+        const res = await apiFetch('/api/feed');
         if (res.status === 403) return;
         const events = await res.json();
         const feed = document.getElementById('live-feed');
         if (!feed) return;
 
-        const blockedEvents = ['TerminateInstances','DeleteObject','DeleteBucket','DeleteUser','DeleteRole'];
-        const warningEvents = ['CreateUser','AddUserToGroup','RemoveUserFromGroup','CreateAccessKey'];
+        const blockedEvents = ['TerminateInstances','DeleteObject','DeleteBucket',
+                               'DeleteUser','DeleteRole','StopLogging'];
+        const warningEvents = ['CreateUser','AddUserToGroup','RemoveUserFromGroup',
+                               'CreateAccessKey','UpdateAccessKey','DeactivateMFADevice'];
+        const successEvents = ['StartInstances','StopInstances','PutObject','GetObject',
+                                'ConsoleLogin','AssumeRole'];
 
-        feed.innerHTML = events.length === 0
-            ? '<div class="feed-loading" style="color:#888;text-align:center;padding:20px">No recent events</div>'
-            : events.map(e => {
-                const isBlocked = blockedEvents.some(b => e.eventName.includes(b));
-                const isWarning = warningEvents.some(w => e.eventName.includes(w));
-                const type = isBlocked ? 'blocked' : isWarning ? 'warning' : 'success';
-                const icon = isBlocked ? '🚫' : isWarning ? '⚠️' : '✅';
-                const time = new Date(e.eventTime);
-                const timeAgo = getTimeAgo(time);
-                return `
-                    <div class="feed-item ${type}">
-                        <span class="feed-icon">${icon}</span>
-                        <div class="feed-content">
-                            <div class="feed-event">${e.eventName}</div>
-                            <div class="feed-meta">by ${e.username}</div>
-                        </div>
-                        <span class="feed-time">${timeAgo}</span>
-                    </div>`;
-            }).join('');
-    } catch (err) { console.error(err); }
+        if (!events || events.length === 0) {
+            feed.innerHTML = `<div style="text-align:center;color:#888;padding:30px">
+                <div style="font-size:32px;margin-bottom:10px">🛡️</div>
+                <div>No recent security events</div>
+                <div style="font-size:11px;margin-top:6px">Perform an action to see it appear here</div>
+            </div>`;
+            return;
+        }
+
+        feed.innerHTML = events.map(e => {
+            const isBlocked = blockedEvents.some(b => e.eventName.includes(b));
+            const isWarning = warningEvents.some(w => e.eventName.includes(w));
+            const type = isBlocked ? 'blocked' : isWarning ? 'warning' : 'success';
+            const icon = isBlocked ? '🚫' : isWarning ? '⚠️' : '✅';
+            const source = e.eventSource === 'dashboard.local' ? '📍 Dashboard' : '☁️ CloudTrail';
+            const time = new Date(e.eventTime);
+            const timeAgo = isNaN(time) ? 'just now' : getTimeAgo(time);
+            return `
+                <div class="feed-item ${type}">
+                    <span class="feed-icon">${icon}</span>
+                    <div class="feed-content">
+                        <div class="feed-event">${e.eventName}</div>
+                        <div class="feed-meta">by <strong>${e.username}</strong> · ${source}</div>
+                    </div>
+                    <span class="feed-time">${timeAgo}</span>
+                </div>`;
+        }).join('');
+    } catch (err) { console.error('Feed error:', err); }
 }
 
 function getTimeAgo(date) {
@@ -415,15 +427,21 @@ async function loadUsers() {
 }
 
 function renderUsers(users) {
-    document.getElementById('users-table').innerHTML = users.map(u => `
-        <tr>
+    document.getElementById('users-table').innerHTML = users.map(u => {
+        const statusBadge = u.status === 'Active'
+            ? '<span class="badge badge-green">● Active</span>'
+            : u.status === 'Keys Only'
+            ? '<span class="badge badge-yellow">🔑 Keys Only</span>'
+            : '<span class="badge badge-red">⛔ Disabled</span>';
+        return `<tr>
             <td><strong>${u.username}</strong></td>
             <td>${getGroupBadge(u.groups)}</td>
             <td><span class="badge ${u.mfaActive ? 'badge-green' : 'badge-red'}">
                 ${u.mfaActive ? '🔐 MFA ON' : '⚠️ MFA OFF'}</span></td>
             <td style="font-size:12px">${new Date(u.createDate).toLocaleDateString()}</td>
-            <td><span class="badge badge-green">● Active</span></td>
-        </tr>`).join('');
+            <td>${statusBadge}</td>
+        </tr>`;
+    }).join('');
 }
 
 function filterUsers() {
@@ -615,15 +633,72 @@ async function onboardEmployee() {
         });
         if (res.status === 403) { showResult(resultBox, 'error', 'Only Admin can onboard employees'); return; }
         const data = await res.json();
-        showResult(resultBox, data.status, data.message);
+
         if (data.status === 'success') {
+            showResult(resultBox, 'success', data.message);
             showToast(`${username} successfully onboarded into ${department}`, 'success');
+
+            // Show credentials in modal — IMPORTANT: shown only once
+            showModal(`🔑 Credentials for ${username}`,
+                `<div style="background:rgba(233,69,96,0.1);border:1px solid rgba(233,69,96,0.3);
+                    border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px;color:#e94560">
+                    ⚠️ <strong>Copy these credentials now — Secret Key is shown only ONCE!</strong>
+                </div>
+                <table style="width:100%;font-size:13px;border-collapse:collapse">
+                    <tr style="border-bottom:1px solid var(--border)">
+                        <td style="padding:8px;color:var(--text-muted);white-space:nowrap">Username</td>
+                        <td style="padding:8px;font-weight:600">${username}</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border)">
+                        <td style="padding:8px;color:var(--text-muted)">Department</td>
+                        <td style="padding:8px"><span class="badge ${getBadgeClass(department)}">${department}</span></td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border)">
+                        <td style="padding:8px;color:var(--text-muted)">Employee ID</td>
+                        <td style="padding:8px">${data.employeeId || employeeId}</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border)">
+                        <td style="padding:8px;color:var(--text-muted)">Console URL</td>
+                        <td style="padding:8px;font-size:11px">https://745416886767.signin.aws.amazon.com/console</td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border)">
+                        <td style="padding:8px;color:var(--text-muted)">Temp Password</td>
+                        <td style="padding:8px"><code style="background:var(--status-bg);padding:3px 8px;border-radius:4px">${data.tempPassword}</code></td>
+                    </tr>
+                    <tr style="border-bottom:1px solid var(--border)">
+                        <td style="padding:8px;color:var(--text-muted)">Access Key ID</td>
+                        <td style="padding:8px"><code style="background:var(--status-bg);padding:3px 8px;border-radius:4px;font-size:11px">${data.accessKeyId}</code></td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px;color:var(--text-muted)">Secret Access Key</td>
+                        <td style="padding:8px"><code style="background:rgba(233,69,96,0.1);color:#e94560;padding:3px 8px;border-radius:4px;font-size:11px">${data.secretAccessKey}</code></td>
+                    </tr>
+                </table>
+                <div style="margin-top:16px;padding:12px;background:var(--status-bg);border-radius:8px;font-size:12px;color:var(--text-muted)">
+                    <strong>Next steps for ${username}:</strong><br>
+                    1. Login at console URL with temp password<br>
+                    2. Reset password on first login<br>
+                    3. Set up MFA (Google Authenticator)<br>
+                    4. Configure AWS CLI: <code>aws configure --profile ${username}</code>
+                </div>`
+            );
+
+            // Refresh the live feed immediately
+            setTimeout(loadLiveFeed, 500);
+
             document.getElementById('onboard-username').value = '';
             document.getElementById('onboard-empid').value = '';
         } else {
+            showResult(resultBox, 'error', data.message);
             showToast(`Onboard failed: ${data.message}`, 'error');
         }
     } catch (err) { showResult(resultBox, 'error', err.message); }
+}
+
+function getBadgeClass(group) {
+    const map = { Admin:'badge-red', Developer:'badge-blue', Tester:'badge-green',
+                  DatabaseAdmin:'badge-purple', Auditor:'badge-orange' };
+    return map[group] || 'badge-gray';
 }
 
 async function promoteEmployee() {
@@ -642,7 +717,10 @@ async function promoteEmployee() {
         if (res.status === 403) { showResult(resultBox, 'error', 'Only Admin can promote employees'); return; }
         const data = await res.json();
         showResult(resultBox, data.status, data.message);
-        if (data.status === 'success') showToast(`${username} promoted: ${oldGroup} → ${newGroup}`, 'success');
+        if (data.status === 'success') {
+            showToast(`${username} promoted: ${oldGroup} → ${newGroup}`, 'success');
+            setTimeout(loadLiveFeed, 500);
+        }
         else showToast(`Promotion failed: ${data.message}`, 'error');
     } catch (err) { showResult(resultBox, 'error', err.message); }
 }
@@ -671,6 +749,7 @@ async function offboardEmployee() {
         if (data.status === 'success') {
             showToast(`${username} successfully offboarded`, 'success');
             document.getElementById('offboard-username').value = '';
+            setTimeout(loadLiveFeed, 500);
         } else {
             showToast(`Offboard failed: ${data.message}`, 'error');
         }
