@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,31 +8,35 @@
 </head>
 <body>
 
+<!-- ===== TOAST CONTAINER ===== -->
+<div id="toast-container"></div>
+
 <!-- ===== LOGIN PAGE ===== -->
 <div id="login-page">
+    <div class="login-bg">
+        <div class="login-particles"></div>
+    </div>
     <div class="login-container">
         <div class="login-logo">🔐</div>
         <h1>Enterprise IAM System</h1>
-        <p class="login-subtitle">Sign in with your AWS Access Keys</p>
-
+        <p class="login-subtitle">AWS Identity & Access Management Dashboard</p>
         <div class="login-box">
             <div class="form-group">
                 <label>AWS Access Key ID</label>
-                <input type="text" id="login-key-id" placeholder="AKIAIOSFODNN7EXAMPLE"
-                       autocomplete="off">
+                <input type="text" id="login-key-id" placeholder="AKIAIOSFODNN7EXAMPLE" autocomplete="off">
             </div>
             <div class="form-group">
                 <label>AWS Secret Access Key</label>
-                <input type="password" id="login-secret" placeholder="••••••••••••••••••••">
+                <div class="password-wrap">
+                    <input type="password" id="login-secret" placeholder="••••••••••••••••••••">
+                    <button class="toggle-pass" onclick="togglePassword()" title="Show/Hide">👁</button>
+                </div>
             </div>
             <div id="login-error" class="login-error"></div>
-            <button class="btn-login" onclick="doLogin()" id="login-btn">
-                🔑 Sign In
-            </button>
+            <button class="btn-login" onclick="doLogin()" id="login-btn">🔑 Sign In</button>
         </div>
-
         <div class="login-hint">
-            <p>Use your IAM user's Access Key ID and Secret Access Key</p>
+            <p>Login with your IAM user's Access Keys</p>
             <div class="role-legend">
                 <span class="chip chip-red">Admin</span>
                 <span class="chip chip-blue">Developer</span>
@@ -57,77 +61,138 @@
                 <span id="sidebar-role-badge" class="role-badge"></span>
             </div>
         </div>
-        <nav id="sidebar-nav">
-            <!-- Populated by JS based on role -->
-        </nav>
+        <nav id="sidebar-nav"></nav>
         <div class="sidebar-footer">
             <button class="btn-logout" onclick="doLogout()">🚪 Sign Out</button>
             <p>AWS Account: 745416886767</p>
+            <p id="session-timer" style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:4px"></p>
         </div>
     </div>
 
     <!-- Main Content -->
     <div class="main-content">
+        <!-- Header -->
         <div class="header">
-            <h1 id="page-title">Dashboard</h1>
+            <div class="header-left">
+                <button class="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+                <h1 id="page-title">Dashboard</h1>
+            </div>
             <div class="header-right">
-                <span class="badge badge-green">● Live</span>
-                <span id="header-user"></span>
+                <span class="badge badge-green pulse">● Live</span>
+                <span id="header-user" style="font-size:13px;color:#666"></span>
+                <button class="theme-toggle" onclick="toggleTheme()" title="Toggle Dark/Light mode">🌙</button>
             </div>
         </div>
 
         <!-- ===== ADMIN DASHBOARD ===== -->
         <div id="page-dashboard" class="page">
+            <!-- Security Score -->
+            <div class="security-score-banner">
+                <div class="score-left">
+                    <div class="score-circle">
+                        <svg viewBox="0 0 36 36" class="score-svg">
+                            <path class="score-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                            <path class="score-fill" id="score-path" stroke-dasharray="85, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                            <text x="18" y="20.35" class="score-text" id="score-value">85</text>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3>Security Score</h3>
+                        <p id="score-label">Good — MFA enabled, CloudTrail active</p>
+                    </div>
+                </div>
+                <div class="score-factors" id="score-factors"></div>
+            </div>
+
+            <!-- Stats Grid -->
             <div class="stats-grid">
-                <div class="stat-card blue">
+                <div class="stat-card blue" onclick="navigateTo('users')">
                     <div class="stat-icon">👤</div>
-                    <div class="stat-info"><h3 id="stat-users">-</h3><p>IAM Users</p></div>
+                    <div class="stat-info">
+                        <h3 class="counter" id="stat-users" data-target="0">0</h3>
+                        <p>IAM Users</p>
+                    </div>
+                    <div class="stat-trend">→</div>
                 </div>
-                <div class="stat-card green">
+                <div class="stat-card green" onclick="navigateTo('groups')">
                     <div class="stat-icon">👥</div>
-                    <div class="stat-info"><h3 id="stat-groups">-</h3><p>IAM Groups</p></div>
+                    <div class="stat-info">
+                        <h3 class="counter" id="stat-groups" data-target="0">0</h3>
+                        <p>IAM Groups</p>
+                    </div>
+                    <div class="stat-trend">→</div>
                 </div>
-                <div class="stat-card purple">
+                <div class="stat-card purple" onclick="navigateTo('roles')">
                     <div class="stat-icon">📜</div>
-                    <div class="stat-info"><h3 id="stat-policies">-</h3><p>Policies</p></div>
+                    <div class="stat-info">
+                        <h3 class="counter" id="stat-policies" data-target="0">0</h3>
+                        <p>Policies</p>
+                    </div>
+                    <div class="stat-trend">→</div>
                 </div>
                 <div class="stat-card orange">
                     <div class="stat-icon">🎭</div>
-                    <div class="stat-info"><h3 id="stat-roles">-</h3><p>Roles</p></div>
+                    <div class="stat-info">
+                        <h3 class="counter" id="stat-roles" data-target="0">0</h3>
+                        <p>IAM Roles</p>
+                    </div>
                 </div>
                 <div class="stat-card red">
                     <div class="stat-icon">🔐</div>
-                    <div class="stat-info"><h3 id="stat-mfa">-</h3><p>MFA Enabled</p></div>
+                    <div class="stat-info">
+                        <h3 class="counter" id="stat-mfa" data-target="0">0</h3>
+                        <p>MFA Enabled</p>
+                    </div>
                 </div>
             </div>
+
+            <!-- Dashboard Grid -->
             <div class="dashboard-grid">
                 <div class="card">
-                    <div class="card-header"><h3>☁️ CloudTrail Status</h3>
-                        <button class="btn-refresh" onclick="loadDashboard()">↻</button></div>
-                    <div id="cloudtrail-status" class="status-box">Loading...</div>
+                    <div class="card-header">
+                        <h3>☁️ CloudTrail Status</h3>
+                        <button class="btn-refresh" onclick="loadDashboard()">↻ Refresh</button>
+                    </div>
+                    <div id="cloudtrail-status" class="status-box">
+                        <div class="skeleton-loader"></div>
+                    </div>
                 </div>
                 <div class="card">
                     <div class="card-header"><h3>🖥️ EC2 Instance</h3></div>
-                    <div id="ec2-status-dash" class="status-box">Loading...</div>
+                    <div id="ec2-status-dash" class="status-box">
+                        <div class="skeleton-loader"></div>
+                    </div>
                 </div>
             </div>
+
+            <!-- Live Security Feed -->
             <div class="card">
-                <div class="card-header"><h3>📋 Recent Events</h3></div>
-                <table class="data-table">
-                    <thead><tr><th>Event</th><th>User</th><th>Time</th></tr></thead>
-                    <tbody id="recent-events"><tr><td colspan="3">Loading...</td></tr></tbody>
-                </table>
+                <div class="card-header">
+                    <h3>🔴 Live Security Feed</h3>
+                    <div class="header-right">
+                        <span class="badge badge-green pulse" id="feed-status">● Monitoring</span>
+                        <button class="btn-refresh" onclick="loadDashboard()">↻</button>
+                    </div>
+                </div>
+                <div id="live-feed" class="live-feed">
+                    <div class="feed-loading">Loading security events...</div>
+                </div>
             </div>
         </div>
 
         <!-- ===== IAM USERS PAGE ===== -->
         <div id="page-users" class="page">
             <div class="card">
-                <div class="card-header"><h3>👥 IAM Users</h3>
-                    <button class="btn-primary" onclick="loadUsers()">↻ Refresh</button></div>
+                <div class="card-header">
+                    <h3>👥 IAM Users</h3>
+                    <div class="header-right">
+                        <input type="text" id="user-search" class="search-input" placeholder="🔍 Search users..." oninput="filterUsers()">
+                        <button class="btn-primary" onclick="loadUsers()">↻ Refresh</button>
+                    </div>
+                </div>
                 <table class="data-table">
-                    <thead><tr><th>Username</th><th>Group / Role</th><th>MFA</th><th>Created</th></tr></thead>
-                    <tbody id="users-table"><tr><td colspan="4">Loading...</td></tr></tbody>
+                    <thead><tr><th>Username</th><th>Group / Role</th><th>MFA Status</th><th>Created</th><th>Status</th></tr></thead>
+                    <tbody id="users-table"><tr><td colspan="5"><div class="skeleton-loader"></div></td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -135,11 +200,13 @@
         <!-- ===== IAM GROUPS PAGE ===== -->
         <div id="page-groups" class="page">
             <div class="card">
-                <div class="card-header"><h3>🏷️ IAM Groups & Policies</h3>
-                    <button class="btn-primary" onclick="loadGroups()">↻ Refresh</button></div>
+                <div class="card-header">
+                    <h3>🏷️ IAM Groups & Policies</h3>
+                    <button class="btn-primary" onclick="loadGroups()">↻ Refresh</button>
+                </div>
                 <table class="data-table">
                     <thead><tr><th>Group</th><th>Attached Policy</th><th>Members</th></tr></thead>
-                    <tbody id="groups-table"><tr><td colspan="3">Loading...</td></tr></tbody>
+                    <tbody id="groups-table"><tr><td colspan="3"><div class="skeleton-loader"></div></td></tr></tbody>
                 </table>
             </div>
         </div>
@@ -147,20 +214,42 @@
         <!-- ===== IAM ROLES PAGE ===== -->
         <div id="page-roles" class="page">
             <div class="card">
-                <div class="card-header"><h3>🎭 IAM Roles</h3>
-                    <button class="btn-primary" onclick="loadRoles()">↻ Refresh</button></div>
+                <div class="card-header">
+                    <h3>🎭 IAM Roles</h3>
+                    <button class="btn-primary" onclick="loadRoles()">↻ Refresh</button>
+                </div>
                 <table class="data-table">
                     <thead><tr><th>Role Name</th><th>ARN</th><th>Created</th></tr></thead>
-                    <tbody id="roles-table"><tr><td colspan="3">Loading...</td></tr></tbody>
+                    <tbody id="roles-table"><tr><td colspan="3"><div class="skeleton-loader"></div></td></tr></tbody>
                 </table>
             </div>
         </div>
 
-        <!-- ===== WORKFLOW PAGE (Admin only) ===== -->
+        <!-- ===== PERMISSION MATRIX PAGE ===== -->
+        <div id="page-matrix" class="page">
+            <div class="card">
+                <div class="card-header">
+                    <h3>🔐 Permission Matrix — RBAC Overview</h3>
+                    <span style="font-size:12px;color:#888">Click any cell to see policy details</span>
+                </div>
+                <div class="matrix-legend">
+                    <span><span class="matrix-cell allow">✅</span> Allowed</span>
+                    <span><span class="matrix-cell deny">❌</span> Denied</span>
+                    <span><span class="matrix-cell limited">🟡</span> Limited</span>
+                    <span><span class="matrix-cell readonly">👁️</span> Read Only</span>
+                </div>
+                <div class="matrix-wrapper">
+                    <table class="matrix-table" id="permission-matrix"></table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== WORKFLOW PAGE ===== -->
         <div id="page-workflow" class="page">
             <div class="workflow-grid">
-                <div class="card">
-                    <div class="card-header"><h3>✅ Onboard Employee</h3></div>
+                <div class="card workflow-card onboard-card">
+                    <div class="workflow-icon">✅</div>
+                    <div class="card-header"><h3>Onboard Employee</h3></div>
                     <div class="form-group"><label>Username</label>
                         <input type="text" id="onboard-username" placeholder="e.g. jane.smith"></div>
                     <div class="form-group"><label>Department</label>
@@ -173,11 +262,12 @@
                         </select></div>
                     <div class="form-group"><label>Employee ID</label>
                         <input type="text" id="onboard-empid" placeholder="e.g. EMP003"></div>
-                    <button class="btn-success btn-full" onclick="onboardEmployee()">➕ Onboard</button>
+                    <button class="btn-success btn-full" onclick="onboardEmployee()">➕ Onboard Employee</button>
                     <div id="onboard-result" class="result-box"></div>
                 </div>
-                <div class="card">
-                    <div class="card-header"><h3>⬆️ Promote Employee</h3></div>
+                <div class="card workflow-card promote-card">
+                    <div class="workflow-icon">⬆️</div>
+                    <div class="card-header"><h3>Promote Employee</h3></div>
                     <div class="form-group"><label>Username</label>
                         <input type="text" id="promote-username" placeholder="e.g. jane.smith"></div>
                     <div class="form-group"><label>Current Group</label>
@@ -190,15 +280,16 @@
                             <option>Admin</option><option>Developer</option>
                             <option>Tester</option><option>DatabaseAdmin</option><option>Auditor</option>
                         </select></div>
-                    <button class="btn-warning btn-full" onclick="promoteEmployee()">⬆️ Promote</button>
+                    <button class="btn-warning btn-full" onclick="promoteEmployee()">⬆️ Promote Employee</button>
                     <div id="promote-result" class="result-box"></div>
                 </div>
-                <div class="card">
-                    <div class="card-header"><h3>❌ Offboard Employee</h3></div>
+                <div class="card workflow-card offboard-card">
+                    <div class="workflow-icon">❌</div>
+                    <div class="card-header"><h3>Offboard Employee</h3></div>
                     <div class="form-group"><label>Username</label>
                         <input type="text" id="offboard-username" placeholder="e.g. jane.smith"></div>
-                    <div class="warning-box">⚠️ Permanently removes user and revokes all access.</div>
-                    <button class="btn-danger btn-full" onclick="offboardEmployee()">🗑️ Offboard</button>
+                    <div class="warning-box">⚠️ This permanently removes the user and revokes all AWS access.</div>
+                    <button class="btn-danger btn-full" onclick="offboardEmployee()">🗑️ Offboard Employee</button>
                     <div id="offboard-result" class="result-box"></div>
                 </div>
             </div>
@@ -207,29 +298,34 @@
         <!-- ===== AUDIT LOGS PAGE ===== -->
         <div id="page-audit" class="page">
             <div class="card">
-                <div class="card-header"><h3>📋 CloudTrail Audit Logs</h3>
+                <div class="card-header">
+                    <h3>📋 CloudTrail Audit Logs</h3>
                     <div class="header-right">
+                        <input type="text" id="audit-search" class="search-input" placeholder="🔍 Filter events..." oninput="filterAudit()">
                         <select id="audit-limit" onchange="loadAudit()">
                             <option value="10">Last 10</option>
                             <option value="20" selected>Last 20</option>
                             <option value="50">Last 50</option>
                         </select>
                         <button class="btn-primary" onclick="loadAudit()">↻ Refresh</button>
+                        <button class="btn-export" onclick="exportAuditCSV()">⬇️ Export CSV</button>
                     </div>
                 </div>
                 <table class="data-table">
-                    <thead><tr><th>#</th><th>Event</th><th>User</th><th>Time</th></tr></thead>
-                    <tbody id="audit-table"><tr><td colspan="4">Loading...</td></tr></tbody>
+                    <thead><tr><th>#</th><th>Event</th><th>User</th><th>Time</th><th>Source</th></tr></thead>
+                    <tbody id="audit-table"><tr><td colspan="5"><div class="skeleton-loader"></div></td></tr></tbody>
                 </table>
             </div>
         </div>
 
-        <!-- ===== EC2 PAGE (Developer + Tester) ===== -->
+        <!-- ===== EC2 PAGE ===== -->
         <div id="page-ec2" class="page">
             <div class="card">
-                <div class="card-header"><h3>🖥️ EC2 Instance Status</h3>
-                    <button class="btn-primary" onclick="loadEc2()">↻ Refresh</button></div>
-                <div id="ec2-status-full" class="status-box">Loading...</div>
+                <div class="card-header">
+                    <h3>🖥️ EC2 Instance Status</h3>
+                    <button class="btn-primary" onclick="loadEc2()">↻ Refresh</button>
+                </div>
+                <div id="ec2-status-full" class="status-box"><div class="skeleton-loader"></div></div>
                 <div id="ec2-access-note" class="access-note"></div>
             </div>
         </div>
@@ -240,10 +336,34 @@
                 <div class="denied-icon">🚫</div>
                 <h2>Access Denied</h2>
                 <p>Your role does not have permission to view this page.</p>
-                <p id="denied-role-info"></p>
+                <p id="denied-role-info" style="color:#e94560;font-weight:600;margin-top:8px"></p>
             </div>
         </div>
 
+    </div>
+</div>
+
+<!-- ===== POLICY DETAIL MODAL ===== -->
+<div id="policy-modal" class="modal-overlay" onclick="closeModal()">
+    <div class="modal-box" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 id="modal-title">Policy Details</h3>
+            <button onclick="closeModal()" class="modal-close">✕</button>
+        </div>
+        <div id="modal-body" class="modal-body"></div>
+    </div>
+</div>
+
+<!-- ===== CONFIRM MODAL ===== -->
+<div id="confirm-modal" class="modal-overlay">
+    <div class="modal-box confirm-box">
+        <div class="confirm-icon">⚠️</div>
+        <h3 id="confirm-title">Confirm Action</h3>
+        <p id="confirm-message"></p>
+        <div class="confirm-buttons">
+            <button id="confirm-cancel" class="btn-secondary" onclick="closeConfirm(false)">Cancel</button>
+            <button id="confirm-ok" class="btn-danger" onclick="closeConfirm(true)">Confirm</button>
+        </div>
     </div>
 </div>
 

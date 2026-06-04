@@ -1,55 +1,130 @@
 const API = '';
 let currentUser = null;
+let auditData = [];
+let allUsers = [];
+let feedInterval = null;
+let sessionInterval = null;
+let sessionSeconds = 28800;
+let confirmCallback = null;
 
-// ===== FETCH HELPER — always include credentials for session cookies =====
+// ===== FETCH HELPER =====
 async function apiFetch(url, options = {}) {
     const defaults = {
-        credentials: 'include',   // CRITICAL: sends session cookie with every request
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...options.headers }
     };
     return fetch(API + url, { ...defaults, ...options });
 }
 
-// ===== ROLE-BASED NAVIGATION CONFIG =====
+// ===== TOAST NOTIFICATIONS =====
+function showToast(message, type = 'info', duration = 4000) {
+    const container = document.getElementById('toast-container');
+    const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `<span>${icons[type]}</span><span>${message}</span>`;
+    toast.onclick = () => removeToast(toast);
+    container.appendChild(toast);
+    setTimeout(() => removeToast(toast), duration);
+}
+
+function removeToast(toast) {
+    toast.classList.add('toast-out');
+    setTimeout(() => toast.remove(), 400);
+}
+
+// ===== CONFIRM MODAL =====
+function showConfirm(title, message, okText = 'Confirm') {
+    return new Promise(resolve => {
+        document.getElementById('confirm-title').textContent = title;
+        document.getElementById('confirm-message').textContent = message;
+        document.getElementById('confirm-ok').textContent = okText;
+        document.getElementById('confirm-modal').classList.add('open');
+        confirmCallback = resolve;
+    });
+}
+
+function closeConfirm(result) {
+    document.getElementById('confirm-modal').classList.remove('open');
+    if (confirmCallback) { confirmCallback(result); confirmCallback = null; }
+}
+
+// ===== POLICY MODAL =====
+function showModal(title, content) {
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-body').innerHTML = content;
+    document.getElementById('policy-modal').classList.add('open');
+}
+
+function closeModal() {
+    document.getElementById('policy-modal').classList.remove('open');
+}
+
+// ===== THEME TOGGLE =====
+function toggleTheme() {
+    const html = document.documentElement;
+    const isDark = html.getAttribute('data-theme') === 'dark';
+    html.setAttribute('data-theme', isDark ? 'light' : 'dark');
+    document.querySelector('.theme-toggle').textContent = isDark ? '🌙' : '☀️';
+    showToast(`Switched to ${isDark ? 'Light' : 'Dark'} mode`, 'info', 2000);
+}
+
+// ===== SIDEBAR TOGGLE =====
+function toggleSidebar() {
+    document.querySelector('.sidebar').classList.toggle('collapsed');
+    document.querySelector('.main-content').classList.toggle('expanded');
+}
+
+// ===== PASSWORD TOGGLE =====
+function togglePassword() {
+    const input = document.getElementById('login-secret');
+    input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+// ===== SESSION TIMER =====
+function startSessionTimer() {
+    sessionSeconds = 28800;
+    clearInterval(sessionInterval);
+    sessionInterval = setInterval(() => {
+        sessionSeconds--;
+        const h = Math.floor(sessionSeconds / 3600);
+        const m = Math.floor((sessionSeconds % 3600) / 60);
+        const el = document.getElementById('session-timer');
+        if (el) el.textContent = `Session: ${h}h ${m}m remaining`;
+        if (sessionSeconds <= 300 && sessionSeconds % 60 === 0) {
+            showToast(`Session expires in ${Math.ceil(sessionSeconds/60)} minutes`, 'warning', 5000);
+        }
+        if (sessionSeconds <= 0) { doLogout(); }
+    }, 1000);
+}
+
+// ===== ROLE-BASED NAV =====
 const ROLE_MENUS = {
     Admin: [
         { id: 'dashboard', icon: '📊', label: 'Dashboard' },
         { id: 'users',     icon: '👥', label: 'IAM Users' },
         { id: 'groups',    icon: '🏷️', label: 'IAM Groups' },
         { id: 'roles',     icon: '🎭', label: 'IAM Roles' },
+        { id: 'matrix',    icon: '🔐', label: 'Permission Matrix' },
         { id: 'workflow',  icon: '⚙️', label: 'Employee Workflow' },
         { id: 'audit',     icon: '📋', label: 'Audit Logs' },
     ],
-    Developer: [
-        { id: 'ec2', icon: '🖥️', label: 'EC2 Status' },
-    ],
-    Tester: [
-        { id: 'ec2', icon: '🖥️', label: 'EC2 Status (Read)' },
-    ],
-    DatabaseAdmin: [
-        { id: 'ec2', icon: '🗄️', label: 'My Access Info' },
-    ],
-    Auditor: [
-        { id: 'audit', icon: '📋', label: 'Audit Logs' },
-    ]
+    Developer: [{ id: 'ec2', icon: '🖥️', label: 'EC2 Status' }],
+    Tester:    [{ id: 'ec2', icon: '🖥️', label: 'EC2 Status (Read)' }],
+    DatabaseAdmin: [{ id: 'ec2', icon: '🗄️', label: 'My Access Info' }],
+    Auditor:   [{ id: 'audit', icon: '📋', label: 'Audit Logs' }]
 };
 
 const ROLE_WELCOME = {
-    Admin:         'Full system access',
-    Developer:     'EC2 start/stop access',
-    Tester:        'Read-only access',
-    DatabaseAdmin: 'RDS management access',
-    Auditor:       'CloudTrail read access'
+    Admin: 'Full system access', Developer: 'EC2 start/stop access',
+    Tester: 'Read-only access', DatabaseAdmin: 'RDS management access',
+    Auditor: 'CloudTrail read access'
 };
 
-// ===== GROUP BADGE =====
 function getGroupBadge(group) {
-    const map = {
-        Admin: 'badge-red', Developer: 'badge-blue',
-        Tester: 'badge-green', DatabaseAdmin: 'badge-purple',
-        Auditor: 'badge-orange', 'No Group': 'badge-gray'
-    };
-    return `<span class="badge ${map[group] || 'badge-gray'}">${group}</span>`;
+    const map = { Admin:'badge-red', Developer:'badge-blue', Tester:'badge-green',
+                  DatabaseAdmin:'badge-purple', Auditor:'badge-orange', 'No Group':'badge-gray' };
+    return `<span class="badge ${map[group]||'badge-gray'}">${group}</span>`;
 }
 
 // ===== LOGIN =====
@@ -58,16 +133,12 @@ async function doLogin() {
     const secret = document.getElementById('login-secret').value.trim();
     const btn = document.getElementById('login-btn');
     const errBox = document.getElementById('login-error');
-
     errBox.style.display = 'none';
 
-    if (!keyId || !secret) {
-        showLoginError('Please enter both Access Key ID and Secret Access Key');
-        return;
-    }
+    if (!keyId || !secret) { showLoginError('Please enter both Access Key ID and Secret Access Key'); return; }
 
     btn.disabled = true;
-    btn.textContent = '⏳ Signing in...';
+    btn.textContent = '⏳ Authenticating...';
 
     try {
         const res = await apiFetch('/api/auth/login', {
@@ -77,17 +148,14 @@ async function doLogin() {
         const data = await res.json();
 
         if (data.success) {
-            currentUser = {
-                username: data.username,
-                role: data.role,
-                displayName: data.displayName
-            };
+            currentUser = { username: data.username, role: data.role, displayName: data.displayName };
+            showToast(`Welcome back, ${data.displayName}! Logged in as ${data.role}`, 'success');
             showApp();
         } else {
             showLoginError(data.message || 'Login failed. Check your credentials.');
         }
     } catch (err) {
-        showLoginError('Cannot connect to server. Make sure the app is running on port 8080.');
+        showLoginError('Cannot connect to server. Make sure the app is running.');
     }
 
     btn.disabled = false;
@@ -101,12 +169,16 @@ function showLoginError(msg) {
 }
 
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && document.getElementById('login-page').style.display !== 'none') {
-        doLogin();
+    if (e.key === 'Enter' && document.getElementById('login-page').style.display !== 'none') doLogin();
+    // Keyboard shortcuts
+    if (currentUser && e.altKey) {
+        const shortcuts = { d:'dashboard', u:'users', g:'groups', r:'roles', w:'workflow', a:'audit' };
+        if (shortcuts[e.key]) { e.preventDefault(); navigateTo(shortcuts[e.key]); }
+        if (e.key === 'l') { e.preventDefault(); doLogout(); }
     }
 });
 
-// ===== SHOW APP AFTER LOGIN =====
+// ===== SHOW APP =====
 function showApp() {
     document.getElementById('login-page').style.display = 'none';
     document.getElementById('app-page').style.display = 'flex';
@@ -115,32 +187,34 @@ function showApp() {
     const badge = document.getElementById('sidebar-role-badge');
     badge.textContent = currentUser.role;
     badge.className = `role-badge role-${currentUser.role}`;
-    document.getElementById('header-user').textContent =
-        currentUser.displayName + ' (' + currentUser.role + ')';
+    document.getElementById('header-user').textContent = `${currentUser.displayName} (${currentUser.role})`;
 
     buildNav(currentUser.role);
+    startSessionTimer();
 
     const firstPage = ROLE_MENUS[currentUser.role]?.[0]?.id || 'dashboard';
     navigateTo(firstPage);
+
+    // Start live feed refresh every 30 seconds for admin
+    if (currentUser.role === 'Admin') {
+        clearInterval(feedInterval);
+        feedInterval = setInterval(loadLiveFeed, 30000);
+    }
 }
 
-// ===== BUILD SIDEBAR NAV =====
 function buildNav(role) {
     const nav = document.getElementById('sidebar-nav');
     const menus = ROLE_MENUS[role] || [];
-
     nav.innerHTML = menus.map(m => `
         <a class="nav-item" onclick="navigateTo('${m.id}')" id="nav-${m.id}">
             ${m.icon} ${m.label}
-        </a>
-    `).join('');
+        </a>`).join('');
 
     nav.innerHTML += `
-        <div style="padding:15px 24px;margin-top:10px;border-top:1px solid rgba(255,255,255,0.1)">
-            <p style="font-size:11px;color:rgba(255,255,255,0.4)">Your Access Level</p>
-            <p style="font-size:12px;color:rgba(255,255,255,0.7);margin-top:4px">
-                ${ROLE_WELCOME[role] || ''}
-            </p>
+        <div style="padding:15px 24px;margin-top:10px;border-top:1px solid rgba(255,255,255,0.08)">
+            <p style="font-size:10px;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:0.5px">Access Level</p>
+            <p style="font-size:12px;color:rgba(255,255,255,0.65);margin-top:4px">${ROLE_WELCOME[role]||''}</p>
+            <p style="font-size:10px;color:rgba(255,255,255,0.25);margin-top:8px">Alt+D/U/G/R/W/A shortcuts</p>
         </div>`;
 }
 
@@ -151,27 +225,27 @@ function navigateTo(page) {
 
     const pageEl = document.getElementById('page-' + page);
     if (pageEl) pageEl.classList.add('active');
-
     const navEl = document.getElementById('nav-' + page);
     if (navEl) navEl.classList.add('active');
 
-    const titles = {
-        dashboard: 'Dashboard', users: 'IAM Users', groups: 'IAM Groups',
-        roles: 'IAM Roles', workflow: 'Employee Workflow', audit: 'Audit Logs',
-        ec2: 'EC2 Status', denied: 'Access Denied'
-    };
+    const titles = { dashboard:'Dashboard', users:'IAM Users', groups:'IAM Groups',
+        roles:'IAM Roles', matrix:'Permission Matrix', workflow:'Employee Workflow',
+        audit:'Audit Logs', ec2:'EC2 Status', denied:'Access Denied' };
     document.getElementById('page-title').textContent = titles[page] || page;
 
     if (page === 'dashboard') loadDashboard();
-    if (page === 'users') loadUsers();
-    if (page === 'groups') loadGroups();
-    if (page === 'roles') loadRoles();
-    if (page === 'audit') loadAudit();
-    if (page === 'ec2') loadEc2();
+    if (page === 'users')     loadUsers();
+    if (page === 'groups')    loadGroups();
+    if (page === 'roles')     loadRoles();
+    if (page === 'matrix')    loadPermissionMatrix();
+    if (page === 'audit')     loadAudit();
+    if (page === 'ec2')       loadEc2();
 }
 
 // ===== LOGOUT =====
 async function doLogout() {
+    clearInterval(feedInterval);
+    clearInterval(sessionInterval);
     await apiFetch('/api/auth/logout', { method: 'POST' });
     currentUser = null;
     document.getElementById('app-page').style.display = 'none';
@@ -179,81 +253,186 @@ async function doLogout() {
     document.getElementById('login-key-id').value = '';
     document.getElementById('login-secret').value = '';
     document.getElementById('login-error').style.display = 'none';
+    showToast('Logged out successfully', 'info', 2000);
 }
 
-// ===== DASHBOARD (Admin) =====
+// ===== ANIMATED COUNTER =====
+function animateCounter(el, target) {
+    let current = 0;
+    const step = Math.ceil(target / 20);
+    const timer = setInterval(() => {
+        current = Math.min(current + step, target);
+        el.textContent = current;
+        if (current >= target) clearInterval(timer);
+    }, 60);
+}
+
+// ===== SECURITY SCORE =====
+function updateSecurityScore(stats, cloudtrailLogging) {
+    let score = 0;
+    const factors = [];
+
+    const mfaPercent = stats.userCount > 0 ? (stats.mfaCount / stats.userCount) * 100 : 0;
+    if (mfaPercent === 100) {
+        score += 30; factors.push({ icon: '🔐', label: 'MFA 100%', ok: true });
+    } else {
+        score += Math.floor(mfaPercent * 0.3);
+        factors.push({ icon: '⚠️', label: `MFA ${Math.round(mfaPercent)}%`, ok: false });
+    }
+
+    if (cloudtrailLogging) { score += 25; factors.push({ icon: '📋', label: 'CloudTrail ON', ok: true }); }
+    else { factors.push({ icon: '❌', label: 'CloudTrail OFF', ok: false }); }
+
+    if (stats.policyCount >= 5) { score += 20; factors.push({ icon: '📜', label: '5 Policies', ok: true }); }
+    if (stats.groupCount >= 5)  { score += 15; factors.push({ icon: '👥', label: '5 Groups', ok: true }); }
+    if (stats.roleCount >= 5)   { score += 10; factors.push({ icon: '🎭', label: '5 Roles', ok: true }); }
+
+    const scoreEl = document.getElementById('score-path');
+    const valueEl = document.getElementById('score-value');
+    const labelEl = document.getElementById('score-label');
+    const factorsEl = document.getElementById('score-factors');
+
+    if (scoreEl) {
+        setTimeout(() => {
+            scoreEl.setAttribute('stroke-dasharray', `${score}, 100`);
+            scoreEl.style.stroke = score >= 80 ? '#06d6a0' : score >= 60 ? '#fb8500' : '#e94560';
+        }, 300);
+    }
+    if (valueEl) valueEl.textContent = score;
+    if (labelEl) {
+        labelEl.textContent = score >= 80 ? 'Excellent security posture' :
+                              score >= 60 ? 'Good — some improvements possible' :
+                              'Needs attention — review security settings';
+    }
+    if (factorsEl) {
+        factorsEl.innerHTML = factors.map(f => `
+            <div class="score-factor">
+                <span>${f.icon}</span>
+                <span style="color:${f.ok ? '#6ee7b7' : '#fca5a5'}">${f.label}</span>
+            </div>`).join('');
+    }
+}
+
+// ===== LIVE SECURITY FEED =====
+async function loadLiveFeed() {
+    try {
+        const res = await apiFetch('/api/audit?limit=8');
+        if (res.status === 403) return;
+        const events = await res.json();
+        const feed = document.getElementById('live-feed');
+        if (!feed) return;
+
+        const blockedEvents = ['TerminateInstances','DeleteObject','DeleteBucket','DeleteUser','DeleteRole'];
+        const warningEvents = ['CreateUser','AddUserToGroup','RemoveUserFromGroup','CreateAccessKey'];
+
+        feed.innerHTML = events.length === 0
+            ? '<div class="feed-loading" style="color:#888;text-align:center;padding:20px">No recent events</div>'
+            : events.map(e => {
+                const isBlocked = blockedEvents.some(b => e.eventName.includes(b));
+                const isWarning = warningEvents.some(w => e.eventName.includes(w));
+                const type = isBlocked ? 'blocked' : isWarning ? 'warning' : 'success';
+                const icon = isBlocked ? '🚫' : isWarning ? '⚠️' : '✅';
+                const time = new Date(e.eventTime);
+                const timeAgo = getTimeAgo(time);
+                return `
+                    <div class="feed-item ${type}">
+                        <span class="feed-icon">${icon}</span>
+                        <div class="feed-content">
+                            <div class="feed-event">${e.eventName}</div>
+                            <div class="feed-meta">by ${e.username}</div>
+                        </div>
+                        <span class="feed-time">${timeAgo}</span>
+                    </div>`;
+            }).join('');
+    } catch (err) { console.error(err); }
+}
+
+function getTimeAgo(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds/60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds/3600)}h ago`;
+    return `${Math.floor(seconds/86400)}d ago`;
+}
+
+// ===== DASHBOARD =====
 async function loadDashboard() {
     try {
         const res = await apiFetch('/api/dashboard');
-        if (res.status === 403) {
-            document.getElementById('page-dashboard').innerHTML =
-                '<div class="denied-box"><div class="denied-icon">🚫</div><h2>Access Denied</h2><p>Admin role required</p></div>';
-            return;
-        }
+        if (res.status === 403) return;
         const data = await res.json();
 
-        document.getElementById('stat-users').textContent = data.stats.userCount;
-        document.getElementById('stat-groups').textContent = data.stats.groupCount;
-        document.getElementById('stat-policies').textContent = data.stats.policyCount;
-        document.getElementById('stat-roles').textContent = data.stats.roleCount;
-        document.getElementById('stat-mfa').textContent = data.stats.mfaCount;
+        // Animate counters
+        const targets = {
+            'stat-users': data.stats.userCount, 'stat-groups': data.stats.groupCount,
+            'stat-policies': data.stats.policyCount, 'stat-roles': data.stats.roleCount,
+            'stat-mfa': data.stats.mfaCount
+        };
+        Object.entries(targets).forEach(([id, val]) => {
+            const el = document.getElementById(id);
+            if (el) animateCounter(el, val);
+        });
 
+        // Security score
+        updateSecurityScore(data.stats, data.cloudtrail?.isLogging);
+
+        // CloudTrail status
         const ct = data.cloudtrail;
         document.getElementById('cloudtrail-status').innerHTML = `
-            <div class="status-row"><span class="status-label">Trail</span>
+            <div class="status-row"><span class="status-label">Trail Name</span>
                 <span class="status-value">${ct.trailName || 'IAM-Project-Trail'}</span></div>
             <div class="status-row"><span class="status-label">Status</span>
-                <span class="status-value">
-                    <span class="badge ${ct.isLogging ? 'badge-green' : 'badge-red'}">
-                        ${ct.isLogging ? '● Active' : '● Stopped'}
-                    </span></span></div>
+                <span class="status-value"><span class="badge ${ct.isLogging?'badge-green':'badge-red'}">
+                    ${ct.isLogging ? '● Active' : '● Stopped'}</span></span></div>
             <div class="status-row"><span class="status-label">Last Delivery</span>
-                <span class="status-value" style="font-size:11px">
-                    ${ct.latestDeliveryTime || 'N/A'}</span></div>`;
+                <span class="status-value" style="font-size:11px">${ct.latestDeliveryTime||'N/A'}</span></div>`;
 
+        // EC2 status
         const ec2 = data.ec2;
-        const sc = ec2.state === 'running' ? 'badge-green' :
-                   ec2.state === 'stopped' ? 'badge-red' : 'badge-yellow';
+        const sc = ec2.state==='running' ? 'badge-green' : ec2.state==='stopped' ? 'badge-red' : 'badge-yellow';
         document.getElementById('ec2-status-dash').innerHTML = `
             <div class="status-row"><span class="status-label">Instance</span>
                 <span class="status-value" style="font-size:11px">${ec2.instanceId}</span></div>
             <div class="status-row"><span class="status-label">State</span>
                 <span class="status-value"><span class="badge ${sc}">${ec2.state}</span></span></div>
             <div class="status-row"><span class="status-label">Type</span>
-                <span class="status-value">${ec2.instanceType || 'N/A'}</span></div>`;
+                <span class="status-value">${ec2.instanceType||'N/A'}</span></div>`;
 
-        const tbody = document.getElementById('recent-events');
-        tbody.innerHTML = (!data.recentEvents || data.recentEvents.length === 0)
-            ? '<tr><td colspan="3" style="text-align:center;color:#888">No events found</td></tr>'
-            : data.recentEvents.map(e => `
-                <tr><td><span class="badge badge-blue">${e.eventName}</span></td>
-                    <td>${e.username}</td>
-                    <td style="font-size:12px">${new Date(e.eventTime).toLocaleString()}</td>
-                </tr>`).join('');
+        // Load live feed
+        loadLiveFeed();
 
-    } catch (err) {
-        console.error('Dashboard error:', err);
-    }
+    } catch (err) { console.error('Dashboard error:', err); }
 }
 
-// ===== USERS (Admin) =====
+// ===== USERS =====
 async function loadUsers() {
     try {
         const res = await apiFetch('/api/users');
         if (res.status === 403) return;
-        const users = await res.json();
-        document.getElementById('users-table').innerHTML = users.map(u => `
-            <tr>
-                <td><strong>${u.username}</strong></td>
-                <td>${getGroupBadge(u.groups)}</td>
-                <td><span class="badge ${u.mfaActive ? 'badge-green' : 'badge-red'}">
-                    ${u.mfaActive ? '🔐 MFA ON' : '⚠️ MFA OFF'}</span></td>
-                <td style="font-size:12px">${new Date(u.createDate).toLocaleDateString()}</td>
-            </tr>`).join('');
+        allUsers = await res.json();
+        renderUsers(allUsers);
     } catch (err) { console.error(err); }
 }
 
-// ===== GROUPS (Admin) =====
+function renderUsers(users) {
+    document.getElementById('users-table').innerHTML = users.map(u => `
+        <tr>
+            <td><strong>${u.username}</strong></td>
+            <td>${getGroupBadge(u.groups)}</td>
+            <td><span class="badge ${u.mfaActive ? 'badge-green' : 'badge-red'}">
+                ${u.mfaActive ? '🔐 MFA ON' : '⚠️ MFA OFF'}</span></td>
+            <td style="font-size:12px">${new Date(u.createDate).toLocaleDateString()}</td>
+            <td><span class="badge badge-green">● Active</span></td>
+        </tr>`).join('');
+}
+
+function filterUsers() {
+    const q = document.getElementById('user-search').value.toLowerCase();
+    renderUsers(allUsers.filter(u =>
+        u.username.toLowerCase().includes(q) || u.groups.toLowerCase().includes(q)));
+}
+
+// ===== GROUPS =====
 async function loadGroups() {
     try {
         const res = await apiFetch('/api/groups');
@@ -263,12 +442,12 @@ async function loadGroups() {
             <tr>
                 <td>${getGroupBadge(g.groupName)}</td>
                 <td style="font-size:12px">${g.policies}</td>
-                <td><strong>${g.memberCount}</strong></td>
+                <td><strong>${g.memberCount}</strong> member(s)</td>
             </tr>`).join('');
     } catch (err) { console.error(err); }
 }
 
-// ===== ROLES (Admin) =====
+// ===== ROLES =====
 async function loadRoles() {
     try {
         const res = await apiFetch('/api/roles');
@@ -283,27 +462,112 @@ async function loadRoles() {
     } catch (err) { console.error(err); }
 }
 
-// ===== AUDIT (Admin + Auditor) =====
+// ===== PERMISSION MATRIX =====
+function loadPermissionMatrix() {
+    const roles = ['Admin', 'Developer', 'Tester', 'DatabaseAdmin', 'Auditor'];
+
+    const matrix = [
+        { section: 'EC2 — Elastic Compute Cloud' },
+        { action: 'Describe/List Instances',      perms: ['✅','✅','👁️','❌','❌'], detail: 'ec2:Describe*' },
+        { action: 'Start Instance',               perms: ['✅','✅','❌','❌','❌'], detail: 'ec2:StartInstances' },
+        { action: 'Stop Instance',                perms: ['✅','✅','❌','❌','❌'], detail: 'ec2:StopInstances' },
+        { action: 'Terminate Instance',           perms: ['✅','❌','❌','❌','❌'], detail: 'ec2:TerminateInstances — Explicit DENY on Developer' },
+        { action: 'Launch New Instance',          perms: ['✅','❌','❌','❌','❌'], detail: 'ec2:RunInstances' },
+        { section: 'S3 — Simple Storage Service' },
+        { action: 'List Bucket',                  perms: ['✅','✅','👁️','❌','❌'], detail: 's3:ListBucket' },
+        { action: 'Download (GetObject)',         perms: ['✅','✅','👁️','❌','❌'], detail: 's3:GetObject' },
+        { action: 'Upload (PutObject)',           perms: ['✅','✅','❌','❌','❌'], detail: 's3:PutObject' },
+        { action: 'Delete Object',               perms: ['✅','❌','❌','❌','❌'], detail: 's3:DeleteObject — Explicit DENY on Developer' },
+        { action: 'Delete Bucket',               perms: ['✅','❌','❌','❌','❌'], detail: 's3:DeleteBucket — Explicit DENY' },
+        { section: 'RDS — Relational Database Service' },
+        { action: 'Describe DB Instances',       perms: ['✅','❌','❌','✅','❌'], detail: 'rds:DescribeDBInstances' },
+        { action: 'Start/Stop DB',               perms: ['✅','❌','❌','✅','❌'], detail: 'rds:StartDBInstance, rds:StopDBInstance' },
+        { action: 'Create Snapshot',             perms: ['✅','❌','❌','✅','❌'], detail: 'rds:CreateDBSnapshot' },
+        { action: 'Delete DB Instance',          perms: ['✅','❌','❌','✅','❌'], detail: 'rds:DeleteDBInstance' },
+        { section: 'CloudTrail & CloudWatch' },
+        { action: 'View CloudTrail Logs',        perms: ['✅','❌','❌','❌','👁️'], detail: 'cloudtrail:LookupEvents, cloudtrail:DescribeTrails' },
+        { action: 'Stop CloudTrail Logging',     perms: ['✅','❌','❌','❌','❌'], detail: 'cloudtrail:StopLogging — Explicit DENY on Auditor' },
+        { action: 'View CloudWatch Metrics',     perms: ['✅','❌','❌','❌','👁️'], detail: 'cloudwatch:GetMetricData, cloudwatch:ListMetrics' },
+        { section: 'IAM — Identity & Access Management' },
+        { action: 'List Users/Groups',           perms: ['✅','❌','❌','❌','👁️'], detail: 'iam:ListUsers, iam:ListGroups' },
+        { action: 'Create IAM User',             perms: ['✅','❌','❌','❌','❌'], detail: 'iam:CreateUser' },
+        { action: 'Delete IAM User',             perms: ['✅','❌','❌','❌','❌'], detail: 'iam:DeleteUser — Explicit DENY' },
+        { action: 'Manage Policies',             perms: ['✅','❌','❌','❌','❌'], detail: 'iam:CreatePolicy, iam:AttachGroupPolicy' },
+    ];
+
+    let html = '<thead><tr><th class="row-header">Action / Resource</th>';
+    roles.forEach(r => html += `<th>${getGroupBadge(r)}</th>`);
+    html += '</tr></thead><tbody>';
+
+    matrix.forEach(row => {
+        if (row.section) {
+            html += `<tr class="section-header"><td colspan="${roles.length + 1}">${row.section}</td></tr>`;
+        } else {
+            html += '<tr>';
+            html += `<td class="action-label">${row.action}</td>`;
+            row.perms.forEach((perm, i) => {
+                const detail = `<strong>${row.action}</strong><br><br>
+                    <strong>Role:</strong> ${roles[i]}<br>
+                    <strong>Permission:</strong> ${perm === '✅' ? 'ALLOWED' : perm === '❌' ? 'DENIED' : perm === '👁️' ? 'READ ONLY' : 'LIMITED'}<br><br>
+                    <strong>AWS Action:</strong><br>
+                    <pre>${row.detail || 'N/A'}</pre>`;
+                html += `<td onclick="showModal('${row.action} — ${roles[i]}', \`${detail}\`)">${perm}</td>`;
+            });
+            html += '</tr>';
+        }
+    });
+
+    html += '</tbody>';
+    document.getElementById('permission-matrix').innerHTML = html;
+}
+
+// ===== AUDIT LOGS =====
 async function loadAudit() {
     try {
-        const limitEl = document.getElementById('audit-limit');
-        const limit = limitEl ? limitEl.value : 20;
+        const limit = document.getElementById('audit-limit')?.value || 20;
         const res = await apiFetch(`/api/audit?limit=${limit}`);
         if (res.status === 403) return;
-        const events = await res.json();
-        document.getElementById('audit-table').innerHTML = events.length === 0
-            ? '<tr><td colspan="4" style="text-align:center;color:#888">No events found</td></tr>'
-            : events.map((e, i) => `
-                <tr>
-                    <td style="color:#888">${i + 1}</td>
-                    <td><span class="badge badge-blue">${e.eventName}</span></td>
-                    <td>${e.username}</td>
-                    <td style="font-size:12px">${new Date(e.eventTime).toLocaleString()}</td>
-                </tr>`).join('');
+        auditData = await res.json();
+        renderAudit(auditData);
     } catch (err) { console.error(err); }
 }
 
-// ===== EC2 (Developer + Tester + DatabaseAdmin) =====
+function renderAudit(events) {
+    document.getElementById('audit-table').innerHTML = events.length === 0
+        ? '<tr><td colspan="5" style="text-align:center;color:#888;padding:30px">No events found</td></tr>'
+        : events.map((e, i) => {
+            const isDeny = e.eventName.includes('Delete') || e.eventName.includes('Terminate');
+            return `<tr>
+                <td style="color:#888">${i + 1}</td>
+                <td><span class="badge ${isDeny ? 'badge-red' : 'badge-blue'}">${e.eventName}</span></td>
+                <td>${e.username}</td>
+                <td style="font-size:12px">${new Date(e.eventTime).toLocaleString()}</td>
+                <td style="font-size:11px;color:#888">${e.eventSource}</td>
+            </tr>`;
+        }).join('');
+}
+
+function filterAudit() {
+    const q = document.getElementById('audit-search').value.toLowerCase();
+    renderAudit(auditData.filter(e =>
+        e.eventName.toLowerCase().includes(q) || e.username.toLowerCase().includes(q)));
+}
+
+function exportAuditCSV() {
+    if (!auditData.length) { showToast('No audit data to export', 'warning'); return; }
+    const headers = ['#', 'Event Name', 'Username', 'Time', 'Source'];
+    const rows = auditData.map((e, i) => [i+1, e.eventName, e.username,
+        new Date(e.eventTime).toLocaleString(), e.eventSource]);
+    const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `audit-logs-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+    showToast('Audit logs exported as CSV', 'success');
+}
+
+// ===== EC2 =====
 async function loadEc2() {
     try {
         const res = await apiFetch('/api/ec2/status');
@@ -313,9 +577,7 @@ async function loadEc2() {
             return;
         }
         const ec2 = await res.json();
-        const sc = ec2.state === 'running' ? 'badge-green' :
-                   ec2.state === 'stopped' ? 'badge-red' : 'badge-yellow';
-
+        const sc = ec2.state==='running' ? 'badge-green' : ec2.state==='stopped' ? 'badge-red' : 'badge-yellow';
         document.getElementById('ec2-status-full').innerHTML = `
             <div class="status-row"><span class="status-label">Name</span>
                 <span class="status-value">EC2-ProjectServer</span></div>
@@ -323,52 +585,45 @@ async function loadEc2() {
                 <span class="status-value">${ec2.instanceId}</span></div>
             <div class="status-row"><span class="status-label">State</span>
                 <span class="status-value"><span class="badge ${sc}">${ec2.state}</span></span></div>
-            <div class="status-row"><span class="status-label">Type</span>
-                <span class="status-value">${ec2.instanceType || 'N/A'}</span></div>
+            <div class="status-row"><span class="status-label">Instance Type</span>
+                <span class="status-value">${ec2.instanceType||'N/A'}</span></div>
             <div class="status-row"><span class="status-label">Private IP</span>
-                <span class="status-value">${ec2.privateIp || 'N/A'}</span></div>`;
+                <span class="status-value">${ec2.privateIp||'N/A'}</span></div>`;
 
+        const notes = {
+            Developer: '💡 As Developer: you can Start/Stop this instance via AWS CLI. You cannot terminate it.',
+            Tester: '👁️ As Tester: read-only view. No modifications allowed.',
+            DatabaseAdmin: '🗄️ As DatabaseAdmin: your access is scoped to RDS only.'
+        };
         const noteEl = document.getElementById('ec2-access-note');
-        if (currentUser?.role === 'Developer') {
-            noteEl.innerHTML = '💡 As Developer, you can Start/Stop this instance using AWS CLI or Console.';
-        } else if (currentUser?.role === 'Tester') {
-            noteEl.innerHTML = '👁️ As Tester, you have read-only view. No modifications allowed.';
-        } else if (currentUser?.role === 'DatabaseAdmin') {
-            noteEl.innerHTML = '🗄️ Your access is scoped to RDS. EC2 access is view-only here.';
-        }
+        if (notes[currentUser?.role]) noteEl.innerHTML = notes[currentUser.role];
     } catch (err) { console.error(err); }
 }
 
-// ===== WORKFLOW (Admin only) =====
+// ===== WORKFLOW =====
 async function onboardEmployee() {
     const username = document.getElementById('onboard-username').value.trim();
     const department = document.getElementById('onboard-dept').value;
     const employeeId = document.getElementById('onboard-empid').value.trim();
     const resultBox = document.getElementById('onboard-result');
 
-    if (!username || !employeeId) {
-        showResult(resultBox, 'error', 'Please fill in all fields');
-        return;
-    }
+    if (!username || !employeeId) { showResult(resultBox, 'error', 'Please fill in all fields'); return; }
 
     try {
         const res = await apiFetch('/api/workflow/onboard', {
-            method: 'POST',
-            body: JSON.stringify({ username, department, employeeId })
+            method: 'POST', body: JSON.stringify({ username, department, employeeId })
         });
-        if (res.status === 403) {
-            showResult(resultBox, 'error', 'Only Admin can onboard employees');
-            return;
-        }
+        if (res.status === 403) { showResult(resultBox, 'error', 'Only Admin can onboard employees'); return; }
         const data = await res.json();
         showResult(resultBox, data.status, data.message);
         if (data.status === 'success') {
+            showToast(`${username} successfully onboarded into ${department}`, 'success');
             document.getElementById('onboard-username').value = '';
             document.getElementById('onboard-empid').value = '';
+        } else {
+            showToast(`Onboard failed: ${data.message}`, 'error');
         }
-    } catch (err) {
-        showResult(resultBox, 'error', 'Request failed: ' + err.message);
-    }
+    } catch (err) { showResult(resultBox, 'error', err.message); }
 }
 
 async function promoteEmployee() {
@@ -382,18 +637,14 @@ async function promoteEmployee() {
 
     try {
         const res = await apiFetch('/api/workflow/promote', {
-            method: 'POST',
-            body: JSON.stringify({ username, oldGroup, newGroup })
+            method: 'POST', body: JSON.stringify({ username, oldGroup, newGroup })
         });
-        if (res.status === 403) {
-            showResult(resultBox, 'error', 'Only Admin can promote employees');
-            return;
-        }
+        if (res.status === 403) { showResult(resultBox, 'error', 'Only Admin can promote employees'); return; }
         const data = await res.json();
         showResult(resultBox, data.status, data.message);
-    } catch (err) {
-        showResult(resultBox, 'error', 'Request failed: ' + err.message);
-    }
+        if (data.status === 'success') showToast(`${username} promoted: ${oldGroup} → ${newGroup}`, 'success');
+        else showToast(`Promotion failed: ${data.message}`, 'error');
+    } catch (err) { showResult(resultBox, 'error', err.message); }
 }
 
 async function offboardEmployee() {
@@ -401,23 +652,29 @@ async function offboardEmployee() {
     const resultBox = document.getElementById('offboard-result');
 
     if (!username) { showResult(resultBox, 'error', 'Enter a username'); return; }
-    if (!confirm(`⚠️ Offboard "${username}"? This permanently deletes the user.`)) return;
+
+    const confirmed = await showConfirm(
+        'Confirm Offboarding',
+        `Are you sure you want to offboard "${username}"? This will permanently delete the user and revoke all AWS access.`,
+        '🗑️ Yes, Offboard'
+    );
+
+    if (!confirmed) return;
 
     try {
         const res = await apiFetch('/api/workflow/offboard', {
-            method: 'POST',
-            body: JSON.stringify({ username })
+            method: 'POST', body: JSON.stringify({ username })
         });
-        if (res.status === 403) {
-            showResult(resultBox, 'error', 'Only Admin can offboard employees');
-            return;
-        }
+        if (res.status === 403) { showResult(resultBox, 'error', 'Only Admin can offboard employees'); return; }
         const data = await res.json();
         showResult(resultBox, data.status, data.message);
-        if (data.status === 'success') document.getElementById('offboard-username').value = '';
-    } catch (err) {
-        showResult(resultBox, 'error', 'Request failed: ' + err.message);
-    }
+        if (data.status === 'success') {
+            showToast(`${username} successfully offboarded`, 'success');
+            document.getElementById('offboard-username').value = '';
+        } else {
+            showToast(`Offboard failed: ${data.message}`, 'error');
+        }
+    } catch (err) { showResult(resultBox, 'error', err.message); }
 }
 
 // ===== HELPERS =====
@@ -425,3 +682,18 @@ function showResult(box, status, msg) {
     box.className = 'result-box ' + status;
     box.textContent = (status === 'success' ? '✅ ' : '❌ ') + msg;
 }
+
+// ===== ON PAGE LOAD — restore session =====
+window.onload = async function () {
+    try {
+        const res = await apiFetch('/api/auth/me');
+        const data = await res.json();
+        if (data.loggedIn) {
+            currentUser = { username: data.username, role: data.role, displayName: data.displayName };
+            showApp();
+            showToast(`Session restored — Welcome back, ${data.displayName}!`, 'info', 3000);
+        }
+    } catch (err) {
+        console.log('No active session, showing login page');
+    }
+};
