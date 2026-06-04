@@ -11,7 +11,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = "*")
 public class AuthController {
 
     @Autowired
@@ -31,16 +30,26 @@ public class AuthController {
             return response;
         }
 
+        System.out.println("Login attempt for key: " + accessKeyId);
+
         LoggedInUser user = authService.authenticate(accessKeyId, secretAccessKey);
 
-        if (user == null || user.getRole().equals("Unknown")) {
+        if (user == null) {
             response.put("success", false);
-            response.put("message", "Invalid credentials or user has no assigned group");
+            response.put("message", "Invalid credentials. Check your Access Key and Secret Key.");
             return response;
         }
 
-        // Store in session
+        if (user.getRole().equals("Unknown")) {
+            response.put("success", false);
+            response.put("message", "User has no IAM group assigned. Contact your administrator.");
+            return response;
+        }
+
         session.setAttribute("loggedInUser", user);
+        session.setMaxInactiveInterval(1800); // 30 minute timeout
+
+        System.out.println("Login success: " + user.getUsername() + " role=" + user.getRole());
 
         response.put("success", true);
         response.put("username", user.getUsername());

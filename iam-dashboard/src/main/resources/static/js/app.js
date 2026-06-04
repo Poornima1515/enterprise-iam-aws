@@ -1,6 +1,15 @@
 const API = '';
 let currentUser = null;
 
+// ===== FETCH HELPER — always include credentials for session cookies =====
+async function apiFetch(url, options = {}) {
+    const defaults = {
+        credentials: 'include',   // CRITICAL: sends session cookie with every request
+        headers: { 'Content-Type': 'application/json', ...options.headers }
+    };
+    return fetch(API + url, { ...defaults, ...options });
+}
+
 // ===== ROLE-BASED NAVIGATION CONFIG =====
 const ROLE_MENUS = {
     Admin: [
@@ -12,16 +21,16 @@ const ROLE_MENUS = {
         { id: 'audit',     icon: '📋', label: 'Audit Logs' },
     ],
     Developer: [
-        { id: 'ec2',       icon: '🖥️', label: 'EC2 Status' },
+        { id: 'ec2', icon: '🖥️', label: 'EC2 Status' },
     ],
     Tester: [
-        { id: 'ec2',       icon: '🖥️', label: 'EC2 Status (Read)' },
+        { id: 'ec2', icon: '🖥️', label: 'EC2 Status (Read)' },
     ],
     DatabaseAdmin: [
-        { id: 'ec2',       icon: '🗄️', label: 'My Access Info' },
+        { id: 'ec2', icon: '🗄️', label: 'My Access Info' },
     ],
     Auditor: [
-        { id: 'audit',     icon: '📋', label: 'Audit Logs' },
+        { id: 'audit', icon: '📋', label: 'Audit Logs' },
     ]
 };
 
@@ -61,21 +70,24 @@ async function doLogin() {
     btn.textContent = '⏳ Signing in...';
 
     try {
-        const res = await fetch(`${API}/api/auth/login`, {
+        const res = await apiFetch('/api/auth/login', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ accessKeyId: keyId, secretAccessKey: secret })
         });
         const data = await res.json();
 
         if (data.success) {
-            currentUser = { username: data.username, role: data.role, displayName: data.displayName };
+            currentUser = {
+                username: data.username,
+                role: data.role,
+                displayName: data.displayName
+            };
             showApp();
         } else {
             showLoginError(data.message || 'Login failed. Check your credentials.');
         }
     } catch (err) {
-        showLoginError('Cannot connect to server. Make sure the app is running.');
+        showLoginError('Cannot connect to server. Make sure the app is running on port 8080.');
     }
 
     btn.disabled = false;
@@ -88,7 +100,6 @@ function showLoginError(msg) {
     err.style.display = 'block';
 }
 
-// Allow Enter key on login
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && document.getElementById('login-page').style.display !== 'none') {
         doLogin();
@@ -100,7 +111,6 @@ function showApp() {
     document.getElementById('login-page').style.display = 'none';
     document.getElementById('app-page').style.display = 'flex';
 
-    // Set user info in sidebar
     document.getElementById('sidebar-username').textContent = currentUser.displayName;
     const badge = document.getElementById('sidebar-role-badge');
     badge.textContent = currentUser.role;
@@ -108,10 +118,8 @@ function showApp() {
     document.getElementById('header-user').textContent =
         currentUser.displayName + ' (' + currentUser.role + ')';
 
-    // Build navigation for this role
     buildNav(currentUser.role);
 
-    // Auto-load first page
     const firstPage = ROLE_MENUS[currentUser.role]?.[0]?.id || 'dashboard';
     navigateTo(firstPage);
 }
@@ -127,7 +135,6 @@ function buildNav(role) {
         </a>
     `).join('');
 
-    // Add role info below nav
     nav.innerHTML += `
         <div style="padding:15px 24px;margin-top:10px;border-top:1px solid rgba(255,255,255,0.1)">
             <p style="font-size:11px;color:rgba(255,255,255,0.4)">Your Access Level</p>
@@ -165,19 +172,24 @@ function navigateTo(page) {
 
 // ===== LOGOUT =====
 async function doLogout() {
-    await fetch(`${API}/api/auth/logout`, { method: 'POST' });
+    await apiFetch('/api/auth/logout', { method: 'POST' });
     currentUser = null;
     document.getElementById('app-page').style.display = 'none';
     document.getElementById('login-page').style.display = 'flex';
     document.getElementById('login-key-id').value = '';
     document.getElementById('login-secret').value = '';
+    document.getElementById('login-error').style.display = 'none';
 }
 
 // ===== DASHBOARD (Admin) =====
 async function loadDashboard() {
     try {
-        const res = await fetch(`${API}/api/dashboard`);
-        if (res.status === 403) { showDenied(); return; }
+        const res = await apiFetch('/api/dashboard');
+        if (res.status === 403) {
+            document.getElementById('page-dashboard').innerHTML =
+                '<div class="denied-box"><div class="denied-icon">🚫</div><h2>Access Denied</h2><p>Admin role required</p></div>';
+            return;
+        }
         const data = await res.json();
 
         document.getElementById('stat-users').textContent = data.stats.userCount;
@@ -189,20 +201,21 @@ async function loadDashboard() {
         const ct = data.cloudtrail;
         document.getElementById('cloudtrail-status').innerHTML = `
             <div class="status-row"><span class="status-label">Trail</span>
-                <span class="status-value">${ct.trailName}</span></div>
+                <span class="status-value">${ct.trailName || 'IAM-Project-Trail'}</span></div>
             <div class="status-row"><span class="status-label">Status</span>
                 <span class="status-value">
                     <span class="badge ${ct.isLogging ? 'badge-green' : 'badge-red'}">
                         ${ct.isLogging ? '● Active' : '● Stopped'}
                     </span></span></div>
             <div class="status-row"><span class="status-label">Last Delivery</span>
-                <span class="status-value" style="font-size:11px">${ct.latestDeliveryTime}</span></div>`;
+                <span class="status-value" style="font-size:11px">
+                    ${ct.latestDeliveryTime || 'N/A'}</span></div>`;
 
         const ec2 = data.ec2;
         const sc = ec2.state === 'running' ? 'badge-green' :
                    ec2.state === 'stopped' ? 'badge-red' : 'badge-yellow';
         document.getElementById('ec2-status-dash').innerHTML = `
-            <div class="status-row"><span class="status-label">Instance ID</span>
+            <div class="status-row"><span class="status-label">Instance</span>
                 <span class="status-value" style="font-size:11px">${ec2.instanceId}</span></div>
             <div class="status-row"><span class="status-label">State</span>
                 <span class="status-value"><span class="badge ${sc}">${ec2.state}</span></span></div>
@@ -210,22 +223,24 @@ async function loadDashboard() {
                 <span class="status-value">${ec2.instanceType || 'N/A'}</span></div>`;
 
         const tbody = document.getElementById('recent-events');
-        tbody.innerHTML = data.recentEvents.length === 0
-            ? '<tr><td colspan="3" style="text-align:center;color:#888">No events</td></tr>'
+        tbody.innerHTML = (!data.recentEvents || data.recentEvents.length === 0)
+            ? '<tr><td colspan="3" style="text-align:center;color:#888">No events found</td></tr>'
             : data.recentEvents.map(e => `
                 <tr><td><span class="badge badge-blue">${e.eventName}</span></td>
                     <td>${e.username}</td>
                     <td style="font-size:12px">${new Date(e.eventTime).toLocaleString()}</td>
                 </tr>`).join('');
 
-    } catch (err) { console.error(err); }
+    } catch (err) {
+        console.error('Dashboard error:', err);
+    }
 }
 
 // ===== USERS (Admin) =====
 async function loadUsers() {
     try {
-        const res = await fetch(`${API}/api/users`);
-        if (res.status === 403) { return; }
+        const res = await apiFetch('/api/users');
+        if (res.status === 403) return;
         const users = await res.json();
         document.getElementById('users-table').innerHTML = users.map(u => `
             <tr>
@@ -241,7 +256,7 @@ async function loadUsers() {
 // ===== GROUPS (Admin) =====
 async function loadGroups() {
     try {
-        const res = await fetch(`${API}/api/groups`);
+        const res = await apiFetch('/api/groups');
         if (res.status === 403) return;
         const groups = await res.json();
         document.getElementById('groups-table').innerHTML = groups.map(g => `
@@ -256,7 +271,7 @@ async function loadGroups() {
 // ===== ROLES (Admin) =====
 async function loadRoles() {
     try {
-        const res = await fetch(`${API}/api/roles`);
+        const res = await apiFetch('/api/roles');
         if (res.status === 403) return;
         const roles = await res.json();
         document.getElementById('roles-table').innerHTML = roles.map(r => `
@@ -271,12 +286,13 @@ async function loadRoles() {
 // ===== AUDIT (Admin + Auditor) =====
 async function loadAudit() {
     try {
-        const limit = document.getElementById('audit-limit')?.value || 20;
-        const res = await fetch(`${API}/api/audit?limit=${limit}`);
+        const limitEl = document.getElementById('audit-limit');
+        const limit = limitEl ? limitEl.value : 20;
+        const res = await apiFetch(`/api/audit?limit=${limit}`);
         if (res.status === 403) return;
         const events = await res.json();
         document.getElementById('audit-table').innerHTML = events.length === 0
-            ? '<tr><td colspan="4" style="text-align:center;color:#888">No events</td></tr>'
+            ? '<tr><td colspan="4" style="text-align:center;color:#888">No events found</td></tr>'
             : events.map((e, i) => `
                 <tr>
                     <td style="color:#888">${i + 1}</td>
@@ -287,13 +303,13 @@ async function loadAudit() {
     } catch (err) { console.error(err); }
 }
 
-// ===== EC2 (Developer + Tester) =====
+// ===== EC2 (Developer + Tester + DatabaseAdmin) =====
 async function loadEc2() {
     try {
-        const res = await fetch(`${API}/api/ec2/status`);
+        const res = await apiFetch('/api/ec2/status');
         if (res.status === 403) {
             document.getElementById('ec2-status-full').innerHTML =
-                '<p style="color:#e94560">❌ Access denied for your role</p>';
+                '<p style="color:#e94560;padding:10px">❌ Access denied for your role</p>';
             return;
         }
         const ec2 = await res.json();
@@ -312,14 +328,13 @@ async function loadEc2() {
             <div class="status-row"><span class="status-label">Private IP</span>
                 <span class="status-value">${ec2.privateIp || 'N/A'}</span></div>`;
 
-        // Show role-specific note
         const noteEl = document.getElementById('ec2-access-note');
         if (currentUser?.role === 'Developer') {
-            noteEl.innerHTML = '💡 As Developer, you can Start and Stop this instance using AWS CLI.';
+            noteEl.innerHTML = '💡 As Developer, you can Start/Stop this instance using AWS CLI or Console.';
         } else if (currentUser?.role === 'Tester') {
             noteEl.innerHTML = '👁️ As Tester, you have read-only view. No modifications allowed.';
         } else if (currentUser?.role === 'DatabaseAdmin') {
-            noteEl.innerHTML = '🗄️ Your access is scoped to RDS. EC2 access is not permitted.';
+            noteEl.innerHTML = '🗄️ Your access is scoped to RDS. EC2 access is view-only here.';
         }
     } catch (err) { console.error(err); }
 }
@@ -332,18 +347,27 @@ async function onboardEmployee() {
     const resultBox = document.getElementById('onboard-result');
 
     if (!username || !employeeId) {
-        showResult(resultBox, 'error', 'Please fill in all fields'); return;
+        showResult(resultBox, 'error', 'Please fill in all fields');
+        return;
     }
-    const res = await fetch(`${API}/api/workflow/onboard`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, department, employeeId })
-    });
-    if (res.status === 403) { showResult(resultBox, 'error', 'Only Admin can onboard employees'); return; }
-    const data = await res.json();
-    showResult(resultBox, data.status, data.message);
-    if (data.status === 'success') {
-        document.getElementById('onboard-username').value = '';
-        document.getElementById('onboard-empid').value = '';
+
+    try {
+        const res = await apiFetch('/api/workflow/onboard', {
+            method: 'POST',
+            body: JSON.stringify({ username, department, employeeId })
+        });
+        if (res.status === 403) {
+            showResult(resultBox, 'error', 'Only Admin can onboard employees');
+            return;
+        }
+        const data = await res.json();
+        showResult(resultBox, data.status, data.message);
+        if (data.status === 'success') {
+            document.getElementById('onboard-username').value = '';
+            document.getElementById('onboard-empid').value = '';
+        }
+    } catch (err) {
+        showResult(resultBox, 'error', 'Request failed: ' + err.message);
     }
 }
 
@@ -356,13 +380,20 @@ async function promoteEmployee() {
     if (!username) { showResult(resultBox, 'error', 'Enter a username'); return; }
     if (oldGroup === newGroup) { showResult(resultBox, 'error', 'Groups must be different'); return; }
 
-    const res = await fetch(`${API}/api/workflow/promote`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, oldGroup, newGroup })
-    });
-    if (res.status === 403) { showResult(resultBox, 'error', 'Only Admin can promote employees'); return; }
-    const data = await res.json();
-    showResult(resultBox, data.status, data.message);
+    try {
+        const res = await apiFetch('/api/workflow/promote', {
+            method: 'POST',
+            body: JSON.stringify({ username, oldGroup, newGroup })
+        });
+        if (res.status === 403) {
+            showResult(resultBox, 'error', 'Only Admin can promote employees');
+            return;
+        }
+        const data = await res.json();
+        showResult(resultBox, data.status, data.message);
+    } catch (err) {
+        showResult(resultBox, 'error', 'Request failed: ' + err.message);
+    }
 }
 
 async function offboardEmployee() {
@@ -370,26 +401,27 @@ async function offboardEmployee() {
     const resultBox = document.getElementById('offboard-result');
 
     if (!username) { showResult(resultBox, 'error', 'Enter a username'); return; }
-    if (!confirm(`⚠️ Offboard "${username}"? This is permanent.`)) return;
+    if (!confirm(`⚠️ Offboard "${username}"? This permanently deletes the user.`)) return;
 
-    const res = await fetch(`${API}/api/workflow/offboard`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username })
-    });
-    if (res.status === 403) { showResult(resultBox, 'error', 'Only Admin can offboard employees'); return; }
-    const data = await res.json();
-    showResult(resultBox, data.status, data.message);
-    if (data.status === 'success') document.getElementById('offboard-username').value = '';
+    try {
+        const res = await apiFetch('/api/workflow/offboard', {
+            method: 'POST',
+            body: JSON.stringify({ username })
+        });
+        if (res.status === 403) {
+            showResult(resultBox, 'error', 'Only Admin can offboard employees');
+            return;
+        }
+        const data = await res.json();
+        showResult(resultBox, data.status, data.message);
+        if (data.status === 'success') document.getElementById('offboard-username').value = '';
+    } catch (err) {
+        showResult(resultBox, 'error', 'Request failed: ' + err.message);
+    }
 }
 
 // ===== HELPERS =====
 function showResult(box, status, msg) {
     box.className = 'result-box ' + status;
     box.textContent = (status === 'success' ? '✅ ' : '❌ ') + msg;
-}
-
-function showDenied() {
-    document.getElementById('denied-role-info').textContent =
-        `Your role: ${currentUser?.role || 'Unknown'}`;
-    navigateTo('denied');
 }
