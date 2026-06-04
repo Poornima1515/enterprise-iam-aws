@@ -1,6 +1,11 @@
 # Maven build output - never commit
 iam-dashboard/target/
 
+# Word temp files
+~$*.docx
+~$*.doc
+~$*.xlsx
+
 # AWS Credentials - NEVER commit these
 .aws/
 *.credentials
