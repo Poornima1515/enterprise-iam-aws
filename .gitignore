@@ -1,3 +1,6 @@
+# Maven build output - never commit
+iam-dashboard/target/
+
 # AWS Credentials - NEVER commit these
 .aws/
 *.credentials
