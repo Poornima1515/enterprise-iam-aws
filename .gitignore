@@ -1,30 +1,56 @@
-# Maven build output - never commit
-iam-dashboard/target/
-
-# Word temp files
-~$*.docx
-~$*.doc
-~$*.xlsx
-
-# AWS Credentials - NEVER commit these
+# ===== AWS CREDENTIALS — NEVER COMMIT =====
 .aws/
 *.credentials
 *credentials*
 *secret*
 *access-key*
+*.pem
+*.key
 
-# Temp files created by scripts
-tmp/
-*.log
-
-# Credential report - contains sensitive user info
+# ===== SENSITIVE DATA =====
 credential-report.csv
 cloudtrail-audit.txt
+*-credentials.txt
+lambda-output.json
 
-# Windows
+# ===== TEMP FILES FROM SCRIPTS =====
+tmp/
+*.log
+offboarding_*.log
+
+# ===== MAVEN BUILD OUTPUT =====
+iam-dashboard/target/
+*.jar
+*.war
+*.class
+
+# ===== WORD / OFFICE TEMP FILES =====
+~$*.docx
+~$*.doc
+~$*.xlsx
+~$*.pptx
+
+# ===== IDE FILES =====
+.idea/
+*.iml
+.vscode/settings.json
+.vscode/launch.json
+*.swp
+*.swo
+
+# ===== OS FILES =====
 Thumbs.db
 desktop.ini
+.DS_Store
+ehthumbs.db
 
-# Editor
-.vscode/
-*.swp
+# ===== NODE (if added later) =====
+node_modules/
+npm-debug.log
+
+# ===== PYTHON (Lambda local testing) =====
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
